@@ -23,8 +23,8 @@ interface IKeeperRegistry is Initializable {
   function typeAndVersion (  ) external view returns ( string calldata );
 
   function addKeeperImplementation(address _implementation, uint256 _idx, string calldata _name);
-  function modifyKeeperImplementation(uint256 _idx, implementation, string calldata _name);
-  function removeKeeperImeplementation(uint256 _idx);
-  function createProxy(address _strategy, string calldata _keeperImplementationName)
+  function modifyKeeperImplementation(uint256 _idx, address _newImplementationAddress, string calldata _name);
+  function removeKeeperImplementation(uint256 _idx);
+  function createProxy(address _strategy, string calldata _keeperImplementationName);
 
 }  
