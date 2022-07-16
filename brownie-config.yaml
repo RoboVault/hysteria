@@ -5,11 +5,13 @@ reports:
     - SafeMath
 dependencies:
   - OpenZeppelin/openzeppelin-contracts@4.6.0
+  - OpenZeppelin/openzeppelin-contracts-upgradeable@4.6.0
 compiler:
   solc:
     version: 0.8.7
     remappings:
       - '@openzeppelin=OpenZeppelin/openzeppelin-contracts@4.6.0'
+      - '@openzeppelinupgradeable=OpenZeppelin/openzeppelin-contracts-upgradeable@4.6.0'
 # automatically fetch contract sources from Etherscan
 autofetch_sources: True
 networks:

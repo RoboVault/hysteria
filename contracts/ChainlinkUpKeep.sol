@@ -5,14 +5,9 @@ pragma experimental ABIEncoderV2;
 
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import "@openzeppelinupgradeable/contracts/proxy/utils/Initializable.sol";
+import "@openzeppelinupgradeable/contracts/access/OwnableUpgradeable.sol";
 import "./interfaces/KeeperCompatible.sol";
-
-
-interface IResolver {
-    function debtTrigger(address strategy) external view returns (bool _canExec, bytes memory _execPayload);
-    function collatTrigger(address strategy) external view returns (bool _canExec, bytes memory _execPayload); 
-}
 
 interface IKeeperProxy {
     // Strategy Wrappers
@@ -22,67 +17,62 @@ interface IKeeperProxy {
     function strategist() external view returns (address);
 
     // Proxy Keeper Functions
+    function collatTrigger() external view returns (bool _canExec);
+    function debtTrigger() external view returns (bool _canExec);
     function collatTriggerHysteria() external view returns (bool _canExec);
     function debtTriggerHysteria() external view returns (bool _canExec);
 }
 
-contract ChainlinkUpkeep is KeeperCompatibleInterface, Initializable {
-    address public keeperProxy;
-    address public keeperRegistry;
-
-    error UpKeepNotNeeded();
+contract ChainlinkUpkeep is Initializable, KeeperCompatibleInterface, OwnableUpgradeable {
+    address public clRegistry;
 
     // V2 Initializer
-    function initialize(address _keeperProxy, address _keeperRegistry) public reinitializer(2) {
-        keeperProxy = _keeperProxy;
-        keeperRegistry = _keeperRegistry;
+    function initialize(address _owner, address _clRegistry) public initializer {
+        _transferOwnership(_owner);
+        clRegistry = _clRegistry;
     }
-    
-    // modifiers
-    modifier onlyKeeperRegistry() {
-        require(msg.sender == keeperRegistry, "!authorized");
+
+    /// modifiers
+    modifier onlyRegistry() {
+        require(msg.sender == clRegistry, "!authorized");
         _;
     }
-    
-    modifier onlyStrategist() {
-        require(msg.sender == strategist(), "!authorized");
-        _;
+   
+    /**
+     * @notice Sets the Chainlink Registry
+     */
+    function setclRegistry(address _clRegistry) external onlyOwner {
+        require(_clRegistry != address(0), "_clRegistry is the zero address");
+        clRegistry = _clRegistry;
     }
 
-    function strategist() public view returns (address) {
-        return IKeeperProxy(keeperProxy).strategist();
-    }
-
-    function setKeeperProxy(address _keeperProxy) external onlyStrategist {
-        require(_keeperProxy != address(0), "_keeperProxy is the zero address");
-        keeperProxy = _keeperProxy;
-    }
-    
-    function setKeeperRegistry(address _keeperRegistry) external onlyStrategist {
-        require(_keeperRegistry != address(0), "_keeperRegistry is the zero address");
-        keeperRegistry = _keeperRegistry;
-    }
-
-    function checkUpkeep(bytes calldata /* checkData */) external view override returns (bool _upkeepNeeded, bytes memory _execPayload) {
+    /**
+     * @notice see KeeperCompatibleInterface.sol
+     */
+    function checkUpkeep(bytes calldata _checkData) external view override returns (bool _upkeepNeeded, bytes memory _performData) {
+        address keeperProxy = abi.decode(_checkData, (address));
+        
         /// first we check debt trigger, if debt rebalance doesn't need to be checked then we check collat trigger
         _upkeepNeeded = IKeeperProxy(keeperProxy).debtTriggerHysteria();
         if (_upkeepNeeded) {
-            _execPayload = abi.encodeWithSelector(IKeeperProxy(keeperProxy).rebalanceDebt.selector);
+            _performData = abi.encode(keeperProxy);
         } else {
             _upkeepNeeded = IKeeperProxy(keeperProxy).collatTriggerHysteria();
             if (_upkeepNeeded) {
-                _execPayload = abi.encodeWithSelector(IKeeperProxy(keeperProxy).rebalanceCollateral.selector);
+                _performData = abi.encode(keeperProxy);
             }
         }
     }
 
-    function performUpkeep(bytes calldata /* performData */) external override onlyKeeperRegistry {
-        if (IKeeperProxy(keeperProxy).debtTriggerHysteria()) {
+    /**
+     * @notice see KeeperCompatibleInterface.sol
+     */
+    function performUpkeep(bytes calldata _performData) external override onlyRegistry {
+        address keeperProxy = abi.decode(_performData, (address));
+        if (IKeeperProxy(keeperProxy).debtTrigger()) {
             IKeeperProxy(keeperProxy).rebalanceDebt();
-        } else if (IKeeperProxy(keeperProxy).collatTriggerHysteria()) {
-            IKeeperProxy(keeperProxy).rebalanceCollateral();
         } else {
-            revert UpKeepNotNeeded();
+            IKeeperProxy(keeperProxy).rebalanceCollateral();
         }
     }
 }
