@@ -6,10 +6,11 @@ pragma experimental ABIEncoderV2;
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { SafeMath } from "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelinupgradeable/contracts/security/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts/access/Roles.sol";
 
 import "./interfaces/IVault.sol";
 import "./interfaces/IStrategyAPI.sol";
-
+import "./interfaces/IKeeperRouter.sol";
 
 /**
  * @title Robovault Base Keeper Proxy
@@ -22,33 +23,37 @@ import "./interfaces/IStrategyAPI.sol";
 abstract contract BaseKeeperProxy is Initializable, ReentrancyGuardUpgradeable {
     using Address for address;
     using SafeMath for uint256;
+    using Roles for Roles.Role;
+
 
     address public strategy;
-    mapping(address => bool) public keepers;
+    address public keeperRouter;
+
+    Roles.Role public harvesters;
+    Roles.Role public tenders;
+
     address[] public keepersList;
 
 
     error BaseKeeperProxy_IdxNotFound();
 
-    function _initialize(address _strategy) internal {
+    function _initialize(address _strategy, address _keeperRouter) internal {
         setStrategyInternal(_strategy);
         __ReentrancyGuard_init();
     }
 
-    function _onlyStrategist() internal {
+    /**
+    * @notice The strategist can call methods that change some properties of the (extended) BaseKeeperProxy. 
+    * For all the other functionaly (adding/removing keepers, change the strat etc) the strategist MUST go through the KeeperRouter
+    */
+    modifier onlyStrategist {
         require(msg.sender == IStrategyAPI(strategy).strategist());
+        _;
     }
 
-    /**
-     * @notice
-     *  Only the strategist and approved keepers can call authorized
-     *  functions
-     */
-    function _onlyKeepers() internal {
-        require(
-            keepers[msg.sender] == true || msg.sender == IStrategyAPI(strategy).strategist(),
-            "!authorized"
-        );
+    modifier onlyRouter {
+        require(msg.sender == keeperRouter);
+        _;
     }
 
     /**
@@ -62,40 +67,34 @@ abstract contract BaseKeeperProxy is Initializable, ReentrancyGuardUpgradeable {
         return (debtRatio == 0);
     }
 
-    function setStrategy(address _strategy) external {
-        _onlyStrategist();
+    function setStrategy(address _strategy) external onlyRouter {
         setStrategyInternal(_strategy);
     }
 
-    function addKeeper(address _newKeeper) external {
-        _onlyStrategist();
-        keepers[_newKeeper] = true;
-        keepersList.push(_newKeeper);
-    }
-
-    function removeKeeper(address _removeKeeper) external {
-        _onlyStrategist();
-        uint256 idx = findKeeperIdx(_removeKeeper);
-        keepers[_removeKeeper] = false;
-        keepersList[idx] = keepersList[keepersList.length - 1];
-        keepersList.pop();
-    }
-
-    function findKeeperIdx(address _keeper) public view returns (uint256) {
-        for (uint i = 0; i < keepersList.length; i++) {
-            if (keepersList[i] == _keeper) {
-                return i;
-            }
+    function addKeeper(address _newKeeper, bool canTend, bool canHarvest) external onlyRouter {
+        if(canTend) {
+            tenders.add(_newKeeper);
         }
-        revert BaseKeeperProxy_IdxNotFound();
+        if(canHarvest) {
+            harvesters.add(_newKeeper);
+        }
+    }
+
+    function removeTender(address _removeKeeper) external onlyRouter {
+        require(tenders.has(_removeKeeper));
+        tenders.remove(_removeKeeper);
+    }
+
+    function removeHarvester(address _removeKeeper) external onlyRouter {
+        require(harvesters.has(_removeKeeper));
+        harvesters.remove(_removeKeeper);
     }
 
     function harvestTrigger(uint256 _callCost) public virtual view returns (bool) {
         return IStrategyAPI(strategy).harvestTrigger(_callCost);
     }
 
-    function harvest() public virtual nonReentrant {
-        _onlyKeepers();
+    function harvest() public virtual nonReentrant onlyRouter {
         IStrategyAPI(strategy).harvest();
     }
 
@@ -103,8 +102,7 @@ abstract contract BaseKeeperProxy is Initializable, ReentrancyGuardUpgradeable {
         return IStrategyAPI(strategy).tendTrigger(_callCost);
     }
 
-    function tend() external virtual nonReentrant {
-        _onlyKeepers();
+    function tend() external virtual nonReentrant onlyRouter {
         IStrategyAPI(strategy).tend();
     }
 
