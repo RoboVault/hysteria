@@ -2,10 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import "@openzeppelinupgradeable/contracts/proxy/utils/Initializable.sol";
-
-
-interface IKeeperRegistry is Initializable {
+interface IKeeperRegistry {
   function FAST_GAS_FEED (  ) external view returns ( address );
   function LINK (  ) external view returns ( address );
   function getCanceledUpkeepList (  ) external view returns ( uint256[] calldata );

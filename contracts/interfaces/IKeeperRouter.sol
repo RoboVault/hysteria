@@ -2,10 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/upgrades/contracts/Initializable.sol";
-import "@openzeppelin/contracts/ownership/Ownable.sol";
-
-interface IKeeperRouter is Initializable, Ownable {
+interface IKeeperRouter {
 
     function harvestTrigger(address strategyAddress, uint256 callCost) external view returns (bool);
     function harvest(address strategyAddress) external;

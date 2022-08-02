@@ -6,39 +6,41 @@ pragma experimental ABIEncoderV2;
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { SafeMath } from "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelinupgradeable/contracts/security/ReentrancyGuardUpgradeable.sol";
-import "@openzeppelin/contracts/access/Roles.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 
 import "./interfaces/IVault.sol";
 import "./interfaces/IStrategyAPI.sol";
 import "./interfaces/IKeeperRouter.sol";
 
+
 /**
  * @title Robovault Base Keeper Proxy
  * @author robovault
  * @notice
- *  KeeperProxy implements a base proxy keeper for Robovaults Strategies. The proxy provide
+ *  BaseKeeperProxy implements a base proxy keeper for Robovaults Strategies. The proxy provide
  *  More flexibility with roles and triggers.
  *
  */
-abstract contract BaseKeeperProxy is Initializable, ReentrancyGuardUpgradeable {
+abstract contract BaseKeeperProxy is Initializable, ReentrancyGuardUpgradeable, AccessControl {
     using Address for address;
     using SafeMath for uint256;
-    using Roles for Roles.Role;
 
 
     address public strategy;
     address public keeperRouter;
 
-    Roles.Role public harvesters;
-    Roles.Role public tenders;
+    bytes32 public constant HARVESTER_ROLE = keccak256("HARVESTER_ROLE");
+    bytes32 public constant TENDER_ROLE = keccak256("TENDER_ROLE");
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
     address[] public keepersList;
 
-
-    error BaseKeeperProxy_IdxNotFound();
-
     function _initialize(address _strategy, address _keeperRouter) internal {
         setStrategyInternal(_strategy);
+        keeperRouter = _keeperRouter;
+        _grantRole(ADMIN_ROLE, keeperRouter);
+        _setRoleAdmin(HARVESTER_ROLE, ADMIN_ROLE);
+        _setRoleAdmin(TENDER_ROLE, ADMIN_ROLE);
         __ReentrancyGuard_init();
     }
 
@@ -73,21 +75,19 @@ abstract contract BaseKeeperProxy is Initializable, ReentrancyGuardUpgradeable {
 
     function addKeeper(address _newKeeper, bool canTend, bool canHarvest) external onlyRouter {
         if(canTend) {
-            tenders.add(_newKeeper);
+            grantRole(TENDER_ROLE, _newKeeper);
         }
         if(canHarvest) {
-            harvesters.add(_newKeeper);
+            grantRole(HARVESTER_ROLE, _newKeeper);
         }
     }
 
     function removeTender(address _removeKeeper) external onlyRouter {
-        require(tenders.has(_removeKeeper));
-        tenders.remove(_removeKeeper);
+        revokeRole(TENDER_ROLE, _removeKeeper);
     }
 
     function removeHarvester(address _removeKeeper) external onlyRouter {
-        require(harvesters.has(_removeKeeper));
-        harvesters.remove(_removeKeeper);
+        revokeRole(HARVESTER_ROLE, _removeKeeper);
     }
 
     function harvestTrigger(uint256 _callCost) public virtual view returns (bool) {
